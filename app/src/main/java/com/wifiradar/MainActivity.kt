@@ -9,28 +9,27 @@ import android.content.pm.PackageManager
 import android.net.wifi.WifiManager
 import android.os.Bundle
 import android.os.CountDownTimer
-import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import com.google.ar.sceneform.ux.ArFragment
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var wifiManager: WifiManager
-    private lateinit var btnStartScan: Button
-    private lateinit var tvStatus: TextView
-    private lateinit var tvWifiResults: TextView
+    private lateinit var tvArTimer: TextView
     private var countDownTimer: CountDownTimer? = null
-    private var isScanning = false
+    private lateinit var arFragment: ArFragment
 
-    // Приймач, який спрацьовує, коли Android завершує сканування Wi-Fi
+    // Приймач Wi-Fi працює у фоні, збираючи дані для майбутніх трикутників
     private val wifiReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             val success = intent.getBooleanExtra(WifiManager.EXTRA_RESULTS_UPDATED, false)
             if (success) {
-                displayWifiResults()
+                // Тут ми пізніше додамо логіку промальовування 3D фігур
+                val results = wifiManager.scanResults 
             }
         }
     }
@@ -39,108 +38,74 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // Ініціалізуємо сервіс Wi-Fi
         wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+        tvArTimer = findViewById(R.id.tvArTimer)
 
-        // Зв'язуємо змінні з елементами дизайну XML
-        btnStartScan = findViewById(R.id.btnStartScan)
-        tvStatus = findViewById(R.id.tvStatus)
-        tvWifiResults = findViewById(R.id.tvWifiResults)
+        // Ініціалізуємо AR-камеру
+        arFragment = supportFragmentManager.findFragmentById(R.id.arFragment) as ArFragment
 
-        btnStartScan.setOnClickListener {
-            if (isScanning) {
-                stopRadar()
-            } else {
-                checkPermissionsAndStart()
-            }
-        }
+        // Одразу при запуску перевіряємо дозволи
+        checkPermissionsAndStart()
     }
 
-    // Перевірка дозволів у реальному часі (вимога сучасного Android)
+    // Тепер нам потрібні два дозволи: Геолокація (для Wi-Fi) та Камера (для AR)
     private fun checkPermissionsAndStart() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) 
-            != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(
-                this, 
-                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION), 
-                101
-            )
+        val permissions = arrayOf(
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.CAMERA
+        )
+        
+        val needsPermission = permissions.any { 
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED 
+        }
+
+        if (needsPermission) {
+            ActivityCompat.requestPermissions(this, permissions, 101)
         } else {
             startRadar()
         }
     }
 
-    // Запуск 1-хвилинної роботи радара
+    // Запуск таймера та сканування
     private fun startRadar() {
-        isScanning = true
-        btnStartScan.text = "Зупинити радар"
-        tvWifiResults.text = "Сканування ефіру..."
-        
-        // Реєструємо приймач результатів сканування
         registerReceiver(wifiReceiver, IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION))
-
-        // Запускаємо перше сканування
         wifiManager.startScan()
 
-        // Створюємо таймер: 60000 мс (1 хвилина), крок оновлення 1000 мс (1 секунда)
         countDownTimer = object : CountDownTimer(60000, 1000) {
             override fun onTick(millisUntilFinished: Long) {
                 val secondsLeft = millisUntilFinished / 1000
-                tvStatus.text = "Радар працює. Залишилось: $secondsLeft сек."
+                // Форматуємо час як 00:XX
+                val formattedTime = String.format("00:%02d", secondsLeft)
+                tvArTimer.text = "TIME REMAINING: $formattedTime"
                 
-                // Оскільки сканування разове, кожні 5 секунд даємо команду шукати знову
                 if (secondsLeft % 5 == 0L) {
                     wifiManager.startScan()
                 }
             }
 
             override fun onFinish() {
-                tvStatus.text = "Час вийшов (1 хвилина). Радар вимкнено."
+                tvArTimer.text = "SCAN COMPLETE"
                 stopRadar()
             }
         }.start()
     }
 
-    // Зупинка радара та очищення процесів
     private fun stopRadar() {
-        isScanning = false
-        btnStartScan.text = "Запустити радар (1 хв)"
         countDownTimer?.cancel()
         try {
             unregisterReceiver(wifiReceiver)
-        } catch (e: Exception) {
-            // Приймач міг бути вже відключений
-        }
+        } catch (e: Exception) {}
     }
 
-    // Обробка та виведення списку мереж на екран
-    private fun displayWifiResults() {
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) 
-            == PackageManager.PERMISSION_GRANTED) {
-            
-            val results = wifiManager.scanResults
-            val sb = StringBuilder()
-            sb.append("Знайдені точки доступу (${results.size}):\n\n")
-            
-            for (result in results) {
-                val ssid = if (result.SSID.isEmpty()) "[Прихована мережа]" else result.SSID
-                sb.append("SSID: $ssid\n")
-                  .append("BSSID: ${result.BSSID}\n")
-                  .append("Потужність сигналу: ${result.level} dBm\n")
-                  .append("-------------------------\n")
-            }
-            tvWifiResults.text = sb.toString()
-        }
-    }
-
-    // Обробка відповіді користувача на запит дозволу геолокації
+    // Обробка дозволів
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == 101 && grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+        // Перевіряємо, чи користувач дав УСІ запитані дозволи
+        if (requestCode == 101 && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
             startRadar()
         } else {
-            Toast.makeText(this, "Потрібен дозвіл на геолокацію для сканування Wi-Fi!", Toast.LENGTH_SHORT).show()
-            tvStatus.text = "Помилка: немає дозволів."
+            Toast.makeText(this, "Потрібні дозволи на камеру та геолокацію!", Toast.LENGTH_LONG).show()
+            tvArTimer.text = "NO PERMISSION"
         }
     }
 
