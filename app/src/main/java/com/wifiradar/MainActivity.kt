@@ -8,24 +8,21 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.net.wifi.WifiManager
 import android.os.Bundle
-import android.view.View
-import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.google.ar.sceneform.Node
 import com.google.ar.sceneform.math.Vector3
-import com.google.ar.sceneform.rendering.ViewRenderable
+import com.google.ar.sceneform.rendering.Color
+import com.google.ar.sceneform.rendering.MaterialFactory
+import com.google.ar.sceneform.rendering.ShapeFactory
 import com.google.ar.sceneform.ux.ArFragment
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var wifiManager: WifiManager
     private lateinit var arFragment: ArFragment
-    
-    // Словник для зберігання посилань на 3D об'єкти та їхні View
     private val activeMarkers = mutableMapOf<String, Node>()
-    private val markerViews = mutableMapOf<String, View>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -49,7 +46,8 @@ class MainActivity : AppCompatActivity() {
         registerReceiver(object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
                 wifiManager.scanResults.forEach { result ->
-                    updateMarker(result.SSID, result.BSSID, result.level)
+                    // Тестовий виклик створення куба
+                    addCubeMarker(result.BSSID)
                 }
             }
         }, IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION))
@@ -57,33 +55,19 @@ class MainActivity : AppCompatActivity() {
         wifiManager.startScan()
     }
 
-    private fun updateMarker(ssid: String, bssid: String, level: Int) {
-        val marker = activeMarkers[bssid]
-        
-        if (marker == null) {
-            // Створюємо нову View з XML
-            val customView = View.inflate(this, R.layout.ar_marker, null)
-            markerViews[bssid] = customView
+    private fun addCubeMarker(bssid: String) {
+        if (activeMarkers[bssid] != null) return
 
-            // Будуємо 3D-рендер
-            ViewRenderable.builder()
-                .setView(this, customView)
-                .build()
-                .thenAccept { renderable ->
-                    val newNode = Node()
-                    newNode.setParent(arFragment.arSceneView.scene)
-                    // Ставимо прямо перед камерою (1 метр вперед)
-                    newNode.localPosition = Vector3(0f, 0f, -1f)
-                    newNode.localScale = Vector3(0.1f, 0.1f, 0.1f)
-                    newNode.renderable = renderable
-                    activeMarkers[bssid] = newNode
-                }
-        }
+        val cubeNode = Node()
+        cubeNode.setParent(arFragment.arSceneView.scene)
+        cubeNode.localPosition = Vector3(0f, 0f, -1f) // 1 метр перед вами
 
-        // Оновлюємо текст у View
-        markerViews[bssid]?.let { view ->
-            view.findViewById<TextView>(R.id.tvSsid)?.text = ssid
-            view.findViewById<TextView>(R.id.tvMacAndSignal)?.text = "$level dBm"
-        }
+        MaterialFactory.makeOpaqueWithColor(this, Color(android.graphics.Color.RED))
+            .thenAccept { material ->
+                val shape = ShapeFactory.makeCube(Vector3(0.1f, 0.1f, 0.1f), Vector3.zero(), material)
+                cubeNode.renderable = shape
+            }
+
+        activeMarkers[bssid] = cubeNode
     }
 }
