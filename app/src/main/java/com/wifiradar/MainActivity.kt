@@ -17,17 +17,15 @@ import com.google.ar.sceneform.Node
 import com.google.ar.sceneform.math.Vector3
 import com.google.ar.sceneform.rendering.ViewRenderable
 import com.google.ar.sceneform.ux.ArFragment
-import kotlin.random.Random
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var wifiManager: WifiManager
     private lateinit var arFragment: ArFragment
     
-    // Зберігаємо окремо і модель, і саму View для оновлення тексту
-    private var markerRenderable: ViewRenderable? = null
-    private val markerViews = mutableMapOf<String, View>()
+    // Словник для зберігання посилань на 3D об'єкти та їхні View
     private val activeMarkers = mutableMapOf<String, Node>()
+    private val markerViews = mutableMapOf<String, View>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -36,13 +34,7 @@ class MainActivity : AppCompatActivity() {
         arFragment = supportFragmentManager.findFragmentById(R.id.arFragment) as ArFragment
         wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
 
-        ViewRenderable.builder()
-            .setView(this, R.layout.ar_marker)
-            .build()
-            .thenAccept { renderable -> 
-                markerRenderable = renderable 
-                checkPermissionsAndStart()
-            }
+        checkPermissionsAndStart()
     }
 
     private fun checkPermissionsAndStart() {
@@ -66,28 +58,29 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateMarker(ssid: String, bssid: String, level: Int) {
-        val renderable = markerRenderable ?: return
+        val marker = activeMarkers[bssid]
         
-        // Якщо маркера ще немає — створюємо
-        if (activeMarkers[bssid] == null) {
-            // Створюємо нову View для цього конкретного маркера
+        if (marker == null) {
+            // Створюємо нову View з XML
             val customView = View.inflate(this, R.layout.ar_marker, null)
             markerViews[bssid] = customView
 
-            val newNode = Node()
-            newNode.setParent(arFragment.arSceneView.scene)
-            newNode.localPosition = Vector3(Random.nextFloat() * 2 - 1, 0f, -2f)
-            newNode.localScale = Vector3(0.1f, 0.1f, 0.1f)
-            
-            // Встановлюємо наш View у рендер-об'єкт
-            ViewRenderable.builder().setView(this, customView).build().thenAccept { newRenderable ->
-                newNode.renderable = newRenderable
-            }
-            
-            activeMarkers[bssid] = newNode
+            // Будуємо 3D-рендер
+            ViewRenderable.builder()
+                .setView(this, customView)
+                .build()
+                .thenAccept { renderable ->
+                    val newNode = Node()
+                    newNode.setParent(arFragment.arSceneView.scene)
+                    // Ставимо прямо перед камерою (1 метр вперед)
+                    newNode.localPosition = Vector3(0f, 0f, -1f)
+                    newNode.localScale = Vector3(0.1f, 0.1f, 0.1f)
+                    newNode.renderable = renderable
+                    activeMarkers[bssid] = newNode
+                }
         }
 
-        // Оновлюємо текст у нашому збереженому View
+        // Оновлюємо текст у View
         markerViews[bssid]?.let { view ->
             view.findViewById<TextView>(R.id.tvSsid)?.text = ssid
             view.findViewById<TextView>(R.id.tvMacAndSignal)?.text = "$level dBm"
