@@ -8,7 +8,6 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.net.wifi.WifiManager
 import android.os.Bundle
-import android.os.CountDownTimer
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -33,13 +32,14 @@ class MainActivity : AppCompatActivity() {
         arFragment = supportFragmentManager.findFragmentById(R.id.arFragment) as ArFragment
         wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
 
-        // Створюємо 3D-модель з нашого XML-маркера
+        // Завантажуємо рендер-об'єкт один раз
         ViewRenderable.builder()
             .setView(this, R.layout.ar_marker)
             .build()
-            .thenAccept { renderable -> markerRenderable = renderable }
-
-        checkPermissionsAndStart()
+            .thenAccept { renderable -> 
+                markerRenderable = renderable 
+                checkPermissionsAndStart()
+            }
     }
 
     private fun checkPermissionsAndStart() {
@@ -63,22 +63,26 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateMarker(ssid: String, bssid: String, level: Int) {
+        val renderable = markerRenderable ?: return // Чекаємо завантаження моделі
+        
         val marker = activeMarkers[bssid]
         if (marker == null) {
             val newNode = Node()
             newNode.setParent(arFragment.arSceneView.scene)
-            
-            // Ставимо трикутник у випадкову точку перед камерою
             newNode.localPosition = Vector3(Random.nextFloat() * 2 - 1, 0f, -2f)
-            newNode.renderable = markerRenderable
+            newNode.localScale = Vector3(0.1f, 0.1f, 0.1f)
+            newNode.renderable = renderable
             
-            val view = markerRenderable?.view
-            view?.findViewById<TextView>(R.id.tvSsid)?.text = ssid
-            view?.findViewById<TextView>(R.id.tvMacAndSignal)?.text = "$level dBm"
+            // Встановлюємо дані конкретно в цей екземпляр
+            val view = renderable.view
+            view.findViewById<TextView>(R.id.tvSsid)?.text = ssid
+            view.findViewById<TextView>(R.id.tvMacAndSignal)?.text = "$level dBm"
             
             activeMarkers[bssid] = newNode
         } else {
-            marker.renderable?.view?.findViewById<TextView>(R.id.tvMacAndSignal)?.text = "$level dBm"
+            // Оновлюємо тільки текст існуючого маркера
+            val view = marker.renderable?.view ?: return
+            view.findViewById<TextView>(R.id.tvMacAndSignal)?.text = "$level dBm"
         }
     }
 }
