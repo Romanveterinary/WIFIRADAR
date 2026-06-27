@@ -28,5 +28,9 @@ android {
 dependencies {
     implementation 'androidx.core:core-ktx:1.12.0'
     implementation 'androidx.appcompat:appcompat:1.6.1'
-    implementation 'com.google.ar:core:1.40.0'
+    
+    // Бібліотеки для ARCore та Sceneform (для відображення камери та 3D фігур)
+    implementation 'com.google.ar:core:1.41.0'
+    implementation 'com.google.ar.sceneform.ux:sceneform-ux:1.17.1'
+    implementation 'com.google.ar.sceneform:core:1.17.1'
 }

@@ -1,40 +1,37 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:padding="16dp"
-    android:gravity="center_horizontal">
+    android:layout_height="match_parent">
 
-    <Button
-        android:id="@+id/btnStartScan"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Запустити радар (1 хв)"
-        android:textSize="18sp"
-        android:layout_marginTop="32dp"/>
+    <fragment
+        android:id="@+id/arFragment"
+        android:name="com.google.ar.sceneform.ux.ArFragment"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
 
-    <TextView
-        android:id="@+id/tvStatus"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="24dp"
-        android:text="Радар очікує запуску..."
-        android:textSize="16sp"
-        android:textAlignment="center"/>
+        android:orientation="vertical"
+        android:background="#80000000"
+        android:padding="8dp"
+        android:gravity="center_horizontal">
 
-    <ScrollView
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:layout_marginTop="16dp">
-        
         <TextView
-            android:id="@+id/tvWifiResults"
-            android:layout_width="match_parent"
+            android:id="@+id/tvArTimer"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text=""
-            android:textSize="14sp"/>
-    </ScrollView>
+            android:text="TIME REMAINING: 01:00"
+            android:textColor="#FFFFFF"
+            android:textSize="20sp"
+            android:textStyle="bold" />
 
-</LinearLayout>
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="SCANNING ALL WI-FI NETWORKS (1 MIN RADAR)"
+            android:textColor="#FFFFFF"
+            android:textSize="12sp" />
+    </LinearLayout>
+
+</RelativeLayout>
