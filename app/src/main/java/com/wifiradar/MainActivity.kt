@@ -8,6 +8,7 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.net.wifi.WifiManager
 import android.os.Bundle
+import android.view.View
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -22,7 +23,10 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var wifiManager: WifiManager
     private lateinit var arFragment: ArFragment
+    
+    // Зберігаємо окремо і модель, і саму View для оновлення тексту
     private var markerRenderable: ViewRenderable? = null
+    private val markerViews = mutableMapOf<String, View>()
     private val activeMarkers = mutableMapOf<String, Node>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -32,7 +36,6 @@ class MainActivity : AppCompatActivity() {
         arFragment = supportFragmentManager.findFragmentById(R.id.arFragment) as ArFragment
         wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
 
-        // Завантажуємо рендер-об'єкт один раз
         ViewRenderable.builder()
             .setView(this, R.layout.ar_marker)
             .build()
@@ -63,25 +66,30 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateMarker(ssid: String, bssid: String, level: Int) {
-        val renderable = markerRenderable ?: return // Чекаємо завантаження моделі
+        val renderable = markerRenderable ?: return
         
-        val marker = activeMarkers[bssid]
-        if (marker == null) {
+        // Якщо маркера ще немає — створюємо
+        if (activeMarkers[bssid] == null) {
+            // Створюємо нову View для цього конкретного маркера
+            val customView = View.inflate(this, R.layout.ar_marker, null)
+            markerViews[bssid] = customView
+
             val newNode = Node()
             newNode.setParent(arFragment.arSceneView.scene)
             newNode.localPosition = Vector3(Random.nextFloat() * 2 - 1, 0f, -2f)
             newNode.localScale = Vector3(0.1f, 0.1f, 0.1f)
-            newNode.renderable = renderable
             
-            // Встановлюємо дані конкретно в цей екземпляр
-            val view = renderable.view
-            view.findViewById<TextView>(R.id.tvSsid)?.text = ssid
-            view.findViewById<TextView>(R.id.tvMacAndSignal)?.text = "$level dBm"
+            // Встановлюємо наш View у рендер-об'єкт
+            ViewRenderable.builder().setView(this, customView).build().thenAccept { newRenderable ->
+                newNode.renderable = newRenderable
+            }
             
             activeMarkers[bssid] = newNode
-        } else {
-            // Оновлюємо тільки текст існуючого маркера
-            val view = marker.renderable?.view ?: return
+        }
+
+        // Оновлюємо текст у нашому збереженому View
+        markerViews[bssid]?.let { view ->
+            view.findViewById<TextView>(R.id.tvSsid)?.text = ssid
             view.findViewById<TextView>(R.id.tvMacAndSignal)?.text = "$level dBm"
         }
     }
