@@ -9,6 +9,7 @@ import android.content.pm.PackageManager
 import android.graphics.Color
 import android.net.wifi.WifiManager
 import android.os.Bundle
+import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -34,6 +35,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var wifiManager: WifiManager
     private lateinit var arFragment: ArFragment
+    private lateinit var wifiListContainer: LinearLayout
     
     private val wifiRecords = mutableMapOf<String, WifiSignalRecord>()
     private val colorPalette = arrayOf(
@@ -47,6 +49,7 @@ class MainActivity : AppCompatActivity() {
 
         arFragment = supportFragmentManager.findFragmentById(R.id.arFragment) as ArFragment
         wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+        wifiListContainer = findViewById(R.id.wifiListContainer)
 
         checkPermissionsAndStart()
     }
@@ -63,8 +66,33 @@ class MainActivity : AppCompatActivity() {
         registerReceiver(object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
                 val results = wifiManager.scanResults
+                
+                // Очищаємо екранний текстовий список перед кожним оновленням
+                wifiListContainer.removeAllViews()
+
+                if (results.isEmpty()) {
+                    val tvEmpty = TextView(context).apply {
+                        text = "Список мереж порожній. Перевірте статус GPS/Локації."
+                        setTextColor(Color.RED)
+                        textSize = 14f
+                    }
+                    wifiListContainer.addView(tvEmpty)
+                    return
+                }
+
                 results.forEach { result ->
-                    if (result.level > -85) { // Фільтрація слабких сигналів
+                    // 1. Додавання мережі в текстовий контейнер поверх екрану
+                    val tvNetwork = TextView(context).apply {
+                        val displaySsid = if (result.SSID.isEmpty()) "[Прихована]" else result.SSID
+                        text = "$displaySsid (${result.BSSID}) | $result.level dBm"
+                        setTextColor(Color.WHITE)
+                        textSize = 14f
+                        setPadding(0, 4, 0, 4)
+                    }
+                    wifiListContainer.addView(tvNetwork)
+
+                    // 2. Спроба відображення в AR просторі
+                    if (result.level > -85) {
                         updateSignalInAR(result.SSID, result.BSSID, result.level)
                     }
                 }

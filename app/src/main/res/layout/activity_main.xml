@@ -10,6 +10,7 @@
         android:layout_height="match_parent" />
 
     <LinearLayout
+        android:id="@+id/headerContainer"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
@@ -33,5 +34,20 @@
             android:textColor="#FFFFFF"
             android:textSize="12sp" />
     </LinearLayout>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="250dp"
+        android:layout_below="@id/headerContainer"
+        android:layout_margin="16dp"
+        android:background="#B3000000"
+        android:padding="8dp">
+
+        <LinearLayout
+            android:id="@+id/wifiListContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+    </ScrollView>
 
 </RelativeLayout>
