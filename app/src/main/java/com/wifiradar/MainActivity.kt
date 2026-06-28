@@ -34,6 +34,17 @@ class MainActivity : AppCompatActivity() {
         arFragment = supportFragmentManager.findFragmentById(R.id.arFragment) as ArFragment
         wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
 
+        // АБСОЛЮТНИЙ ТЕСТ AR: Малюємо м'ячик при першому ж розпізнаванні простору (навіть без Wi-Fi)
+        arFragment.arSceneView.scene.addOnUpdateListener {
+            val frame = arFragment.arSceneView.arFrame ?: return@addOnUpdateListener
+            if (frame.camera.trackingState == com.google.ar.core.TrackingState.TRACKING) {
+                if (activeMarkers["MOCK_TEST"] == null) {
+                    drawRedSphere("MOCK_TEST")
+                    Toast.makeText(this, "AR Працює! Тестовий м'яч встановлено.", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+
         checkPermissionsAndStart()
     }
 
@@ -49,12 +60,9 @@ class MainActivity : AppCompatActivity() {
         registerReceiver(object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
                 val results = wifiManager.scanResults
-                
-                // ДІАГНОСТИКА №1: Чи взагалі спрацьовує Wi-Fi?
-                Toast.makeText(context, "Wi-Fi сканування успішне! Знайдено мереж: ${results.size}", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, "Wi-Fi сканер: Знайдено ${results.size} мереж", Toast.LENGTH_LONG).show()
 
                 results.forEach { result ->
-                    // Малюємо тестову кулю тільки для найсильніших мереж (щоб не захаращувати екран)
                     if (result.level > -80) {
                         drawRedSphere(result.BSSID)
                     }
@@ -62,13 +70,9 @@ class MainActivity : AppCompatActivity() {
             }
         }, IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION))
         
-        val success = wifiManager.startScan()
-        if (!success) {
-            Toast.makeText(this, "Помилка: Android заблокував Wi-Fi сканування (Throttling)", Toast.LENGTH_LONG).show()
-        }
+        wifiManager.startScan()
     }
 
-    // ДІАГНОСТИКА №2: Малюємо найпростішу базову фігуру ARCore
     private fun drawRedSphere(bssid: String) {
         val frame = arFragment.arSceneView?.arFrame ?: return
         if (frame.camera.trackingState != com.google.ar.core.TrackingState.TRACKING) return
@@ -90,7 +94,6 @@ class MainActivity : AppCompatActivity() {
                 val anchorNode = AnchorNode(it)
                 anchorNode.setParent(arFragment.arSceneView?.scene)
 
-                // Малюємо суцільну червону кулю радіусом 10 см
                 MaterialFactory.makeOpaqueWithColor(this, Color(android.graphics.Color.RED))
                     .thenAccept { material ->
                         val sphereNode = Node()
