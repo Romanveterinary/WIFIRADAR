@@ -6,11 +6,10 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.net.wifi.WifiManager
 import android.os.Bundle
-import android.view.View
 import android.widget.TextView
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -18,17 +17,29 @@ import com.google.ar.core.Pose
 import com.google.ar.core.TrackingState
 import com.google.ar.sceneform.AnchorNode
 import com.google.ar.sceneform.Node
+import com.google.ar.sceneform.math.Vector3
+import com.google.ar.sceneform.rendering.MaterialFactory
+import com.google.ar.sceneform.rendering.ShapeFactory
 import com.google.ar.sceneform.rendering.ViewRenderable
 import com.google.ar.sceneform.ux.ArFragment
+import kotlin.math.abs
+
+data class WifiSignalRecord(
+    var currentNode: AnchorNode? = null,
+    var labelView: ViewRenderable? = null,
+    var lastRssi: Int = -100
+)
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var wifiManager: WifiManager
     private lateinit var arFragment: ArFragment
     
-    private val activeMarkers = mutableMapOf<String, AnchorNode>()
-    private val markerViews = mutableMapOf<String, View>()
-    private var verticalOffset = -0.5f // Початкова висота (нижче рівня очей)
+    private val wifiRecords = mutableMapOf<String, WifiSignalRecord>()
+    private val colorPalette = arrayOf(
+        Color.RED, Color.GREEN, Color.BLUE, Color.YELLOW,
+        Color.CYAN, Color.MAGENTA, Color.parseColor("#FF9800"), Color.parseColor("#9C27B0")
+    )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -52,19 +63,10 @@ class MainActivity : AppCompatActivity() {
         registerReceiver(object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
                 val results = wifiManager.scanResults
-                
-                if (results.isEmpty()) {
-                    Toast.makeText(context, "0 мереж: Увімкніть GPS (Локацію) у шторці телефону", Toast.LENGTH_LONG).show()
-                    return
-                }
-
-                Toast.makeText(context, "Обробка ${results.size} мереж...", Toast.LENGTH_SHORT).show()
-
-                // Фільтрація: беремо 5 найсильніших сигналів
-                val topNetworks = results.sortedByDescending { it.level }.take(5)
-                
-                topNetworks.forEach { result ->
-                    updateMarker(result.SSID, result.BSSID, result.level)
+                results.forEach { result ->
+                    if (result.level > -85) { // Фільтрація слабких сигналів
+                        updateSignalInAR(result.SSID, result.BSSID, result.level)
+                    }
                 }
             }
         }, IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION))
@@ -72,50 +74,76 @@ class MainActivity : AppCompatActivity() {
         wifiManager.startScan()
     }
 
-    private fun updateMarker(ssid: String, bssid: String, level: Int) {
+    private fun getColorForMac(mac: String): Int {
+        val index = abs(mac.hashCode()) % colorPalette.size
+        return colorPalette[index]
+    }
+
+    private fun updateSignalInAR(ssid: String, bssid: String, level: Int) {
+        val record = wifiRecords[bssid] ?: WifiSignalRecord().also { wifiRecords[bssid] = it }
+        record.lastRssi = level
+
         val frame = arFragment.arSceneView.arFrame ?: return
         if (frame.camera.trackingState != TrackingState.TRACKING) return
 
-        if (activeMarkers[bssid] == null) {
-            val cameraPose = frame.camera.pose
-            
-            // Математика вертикального стеку: x=0 (центр), z=-1.5 (глибина), y=змінна висота
-            val offset = floatArrayOf(0f, verticalOffset, -1.5f)
-            verticalOffset += 0.35f 
-            if (verticalOffset > 1.0f) verticalOffset = -0.5f // Зациклення висоти
-            
-            val transformed = FloatArray(3)
-            cameraPose.rotateVector(offset, 0, transformed, 0)
-            
-            val anchorPose = Pose.makeTranslation(
-                cameraPose.translation[0] + transformed[0], 
-                cameraPose.translation[1] + transformed[1], 
-                cameraPose.translation[2] + transformed[2]
-            )
-            
-            val anchor = arFragment.arSceneView.session?.createAnchor(anchorPose) ?: return
-            val anchorNode = AnchorNode(anchor)
-            anchorNode.setParent(arFragment.arSceneView.scene)
+        val displaySsid = if (ssid.isEmpty()) "[Прихована]" else ssid
 
-            val customView = View.inflate(this@MainActivity, R.layout.ar_marker, null)
-            markerViews[bssid] = customView
-            
-            val displaySsid = if (ssid.isEmpty()) "[Прихована]" else ssid
-            customView.findViewById<TextView>(R.id.tvSsid)?.text = displaySsid
-            customView.findViewById<TextView>(R.id.tvMacAndSignal)?.text = "$level dBm"
+        if (record.currentNode == null) {
+            val baseSize = when {
+                level > -50 -> 0.15f
+                level > -70 -> 0.08f
+                else -> 0.04f
+            }
 
-            ViewRenderable.builder()
-                .setView(this@MainActivity, customView)
-                .build()
-                .thenAccept { renderable ->
-                    val labelNode = Node()
-                    labelNode.setParent(anchorNode)
-                    labelNode.renderable = renderable
-                }
+            val androidColorInt = getColorForMac(bssid)
+            val r = Color.red(androidColorInt) / 255f
+            val g = Color.green(androidColorInt) / 255f
+            val b = Color.blue(androidColorInt) / 255f
+            val arColor = com.google.ar.sceneform.rendering.Color(r, g, b)
 
-            activeMarkers[bssid] = anchorNode
+            MaterialFactory.makeOpaqueWithColor(this, arColor).thenAccept { material ->
+                ViewRenderable.builder()
+                    .setView(this@MainActivity, R.layout.ar_label)
+                    .build()
+                    .thenAccept { viewRenderable ->
+                        record.labelView = viewRenderable
+                        val textView = viewRenderable.view.findViewById<TextView>(R.id.tv_ar_label)
+                        textView.text = "$displaySsid\n$level dBm"
+
+                        val shapeNode = Node()
+                        shapeNode.renderable = ShapeFactory.makeSphere(baseSize, Vector3.zero(), material)
+
+                        val cameraPose = frame.camera.pose
+                        val posArray = cameraPose.translation
+                        val forward = floatArrayOf(0f, 0f, -0.5f)
+                        val transformed = FloatArray(3)
+                        cameraPose.rotateVector(forward, 0, transformed, 0)
+
+                        val anchorPose = Pose.makeTranslation(
+                            posArray[0] + transformed[0],
+                            posArray[1] + transformed[1],
+                            posArray[2] + transformed[2]
+                        )
+
+                        val anchor = arFragment.arSceneView.session?.createAnchor(anchorPose)
+                        anchor?.let {
+                            val anchorNode = AnchorNode(it)
+                            anchorNode.setParent(arFragment.arSceneView.scene)
+
+                            shapeNode.setParent(anchorNode)
+
+                            val labelNode = Node()
+                            labelNode.setParent(anchorNode)
+                            labelNode.renderable = viewRenderable
+                            labelNode.localScale = Vector3(0.6f, 0.6f, 0.6f)
+                            labelNode.localPosition = Vector3(0f, baseSize + 0.10f, 0f)
+
+                            record.currentNode = anchorNode
+                        }
+                    }
+            }
         } else {
-            markerViews[bssid]?.findViewById<TextView>(R.id.tvMacAndSignal)?.text = "$level dBm"
+            record.labelView?.view?.findViewById<TextView>(R.id.tv_ar_label)?.text = "$displaySsid\n$level dBm"
         }
     }
 }
