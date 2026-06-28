@@ -10,6 +10,7 @@ import android.net.wifi.WifiManager
 import android.os.Bundle
 import android.view.View
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -19,7 +20,6 @@ import com.google.ar.sceneform.AnchorNode
 import com.google.ar.sceneform.Node
 import com.google.ar.sceneform.rendering.ViewRenderable
 import com.google.ar.sceneform.ux.ArFragment
-import kotlin.random.Random
 
 class MainActivity : AppCompatActivity() {
 
@@ -28,6 +28,7 @@ class MainActivity : AppCompatActivity() {
     
     private val activeMarkers = mutableMapOf<String, AnchorNode>()
     private val markerViews = mutableMapOf<String, View>()
+    private var verticalOffset = -0.5f // Початкова висота (нижче рівня очей)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -50,11 +51,20 @@ class MainActivity : AppCompatActivity() {
     private fun startRadar() {
         registerReceiver(object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
-                wifiManager.scanResults.forEach { result ->
-                    // Фільтруємо занадто слабкі мережі для чистоти екрану
-                    if (result.level > -85) {
-                        updateMarker(result.SSID, result.BSSID, result.level)
-                    }
+                val results = wifiManager.scanResults
+                
+                if (results.isEmpty()) {
+                    Toast.makeText(context, "0 мереж: Увімкніть GPS (Локацію) у шторці телефону", Toast.LENGTH_LONG).show()
+                    return
+                }
+
+                Toast.makeText(context, "Обробка ${results.size} мереж...", Toast.LENGTH_SHORT).show()
+
+                // Фільтрація: беремо 5 найсильніших сигналів
+                val topNetworks = results.sortedByDescending { it.level }.take(5)
+                
+                topNetworks.forEach { result ->
+                    updateMarker(result.SSID, result.BSSID, result.level)
                 }
             }
         }, IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION))
@@ -67,11 +77,12 @@ class MainActivity : AppCompatActivity() {
         if (frame.camera.trackingState != TrackingState.TRACKING) return
 
         if (activeMarkers[bssid] == null) {
-            // 1. Генерація просторового зсуву (від -1.5 до 1.5м по X, і від -1 до -2.5м по Z)
             val cameraPose = frame.camera.pose
-            val offsetX = (Random.nextFloat() * 3f) - 1.5f
-            val offsetZ = -(Random.nextFloat() * 1.5f + 1.0f)
-            val offset = floatArrayOf(offsetX, 0f, offsetZ)
+            
+            // Математика вертикального стеку: x=0 (центр), z=-1.5 (глибина), y=змінна висота
+            val offset = floatArrayOf(0f, verticalOffset, -1.5f)
+            verticalOffset += 0.35f 
+            if (verticalOffset > 1.0f) verticalOffset = -0.5f // Зациклення висоти
             
             val transformed = FloatArray(3)
             cameraPose.rotateVector(offset, 0, transformed, 0)
@@ -86,17 +97,15 @@ class MainActivity : AppCompatActivity() {
             val anchorNode = AnchorNode(anchor)
             anchorNode.setParent(arFragment.arSceneView.scene)
 
-            // 2. Ініціалізація View
-            val customView = View.inflate(this, R.layout.ar_marker, null)
+            val customView = View.inflate(this@MainActivity, R.layout.ar_marker, null)
             markerViews[bssid] = customView
             
-            val displaySsid = if (ssid.isEmpty()) "[Прихована мережа]" else ssid
+            val displaySsid = if (ssid.isEmpty()) "[Прихована]" else ssid
             customView.findViewById<TextView>(R.id.tvSsid)?.text = displaySsid
             customView.findViewById<TextView>(R.id.tvMacAndSignal)?.text = "$level dBm"
 
-            // 3. Рендер об'єкта
             ViewRenderable.builder()
-                .setView(this, customView)
+                .setView(this@MainActivity, customView)
                 .build()
                 .thenAccept { renderable ->
                     val labelNode = Node()
@@ -106,7 +115,6 @@ class MainActivity : AppCompatActivity() {
 
             activeMarkers[bssid] = anchorNode
         } else {
-            // 4. Оновлення існуючого об'єкта (зміна dBm)
             markerViews[bssid]?.findViewById<TextView>(R.id.tvMacAndSignal)?.text = "$level dBm"
         }
     }
