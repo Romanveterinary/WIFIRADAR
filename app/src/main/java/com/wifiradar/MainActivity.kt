@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.net.wifi.ScanResult
 import android.net.wifi.WifiManager
 import android.os.Bundle
 import android.widget.LinearLayout
@@ -24,6 +25,7 @@ import com.google.ar.sceneform.rendering.ShapeFactory
 import com.google.ar.sceneform.rendering.ViewRenderable
 import com.google.ar.sceneform.ux.ArFragment
 import kotlin.math.abs
+import kotlin.random.Random
 
 data class WifiSignalRecord(
     var currentNode: AnchorNode? = null,
@@ -38,6 +40,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var wifiListContainer: LinearLayout
     
     private val wifiRecords = mutableMapOf<String, WifiSignalRecord>()
+    // Черга для мереж, які чекають, поки ARCore завантажиться
+    private val pendingNetworks = mutableListOf<ScanResult>() 
+    
     private val colorPalette = arrayOf(
         Color.RED, Color.GREEN, Color.BLUE, Color.YELLOW,
         Color.CYAN, Color.MAGENTA, Color.parseColor("#FF9800"), Color.parseColor("#9C27B0")
@@ -50,6 +55,23 @@ class MainActivity : AppCompatActivity() {
         arFragment = supportFragmentManager.findFragmentById(R.id.arFragment) as ArFragment
         wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
         wifiListContainer = findViewById(R.id.wifiListContainer)
+
+        // Слухаємо оновлення кадрів ARCore
+        arFragment.arSceneView.scene.addOnUpdateListener {
+            val frame = arFragment.arSceneView.arFrame ?: return@addOnUpdateListener
+            
+            // Якщо камера готова і є мережі в черзі — малюємо їх!
+            if (frame.camera.trackingState == TrackingState.TRACKING && pendingNetworks.isNotEmpty()) {
+                val networksToRender = pendingNetworks.toList()
+                pendingNetworks.clear() // Очищаємо чергу
+                
+                networksToRender.forEach { result ->
+                    if (result.level > -85) {
+                        updateSignalInAR(result.SSID, result.BSSID, result.level)
+                    }
+                }
+            }
+        }
 
         checkPermissionsAndStart()
     }
@@ -67,7 +89,6 @@ class MainActivity : AppCompatActivity() {
             override fun onReceive(context: Context, intent: Intent) {
                 val results = wifiManager.scanResults
                 
-                // Очищаємо екранний текстовий список перед кожним оновленням
                 wifiListContainer.removeAllViews()
 
                 if (results.isEmpty()) {
@@ -80,21 +101,19 @@ class MainActivity : AppCompatActivity() {
                     return
                 }
 
+                // Оновлюємо UI список і додаємо мережі в чергу для AR
+                pendingNetworks.clear()
+                pendingNetworks.addAll(results)
+
                 results.forEach { result ->
-                    // 1. Додавання мережі в текстовий контейнер поверх екрану
                     val tvNetwork = TextView(context).apply {
                         val displaySsid = if (result.SSID.isEmpty()) "[Прихована]" else result.SSID
-                        text = "$displaySsid (${result.BSSID}) | $result.level dBm"
+                        text = "$displaySsid (${result.BSSID}) | ${result.level} dBm"
                         setTextColor(Color.WHITE)
                         textSize = 14f
                         setPadding(0, 4, 0, 4)
                     }
                     wifiListContainer.addView(tvNetwork)
-
-                    // 2. Спроба відображення в AR просторі
-                    if (result.level > -85) {
-                        updateSignalInAR(result.SSID, result.BSSID, result.level)
-                    }
                 }
             }
         }, IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION))
@@ -143,7 +162,13 @@ class MainActivity : AppCompatActivity() {
 
                         val cameraPose = frame.camera.pose
                         val posArray = cameraPose.translation
-                        val forward = floatArrayOf(0f, 0f, -0.5f)
+                        
+                        // ДОДАНО: Випадковий розкид координат (від -1.5 до 1.5 метра по ширині, від 0.5 до 2.5 метрів у глибину)
+                        val randomX = Random.nextFloat() * 3f - 1.5f 
+                        val randomZ = -(Random.nextFloat() * 2f + 0.5f) 
+                        val randomY = Random.nextFloat() * 1f - 0.5f // Трохи вгору/вниз
+
+                        val forward = floatArrayOf(randomX, randomY, randomZ)
                         val transformed = FloatArray(3)
                         cameraPose.rotateVector(forward, 0, transformed, 0)
 
